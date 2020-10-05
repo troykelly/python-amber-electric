@@ -55,7 +55,7 @@ class Market(object):
             if "networkProvider" in response["data"]
             else None
         )
-        if "staticPrices" in response["data"]["staticPrices"]:
+        if "staticPrices" in response["data"]:
             if "E1" in response["data"]["staticPrices"]:
                 self.__e1 = E1(response["data"]["staticPrices"]["E1"])
             if "E2" in response["data"]["staticPrices"]:
