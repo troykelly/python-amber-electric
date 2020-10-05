@@ -61,6 +61,17 @@ class ForecastPrices(object):
 
         return data
 
+    def __repr__(self):
+        return self.list
+
+    def __str__(self):
+        if not self.list:
+            return None
+        data = ""
+        for price in self.list:
+            data += str(price) + "\n"
+        return data
+
 
 class PriceData(object):
     def __init__(self, price_payload):
@@ -114,7 +125,7 @@ class PriceData(object):
     @property
     def kwh(self):
         try:
-            return round(self.__price_kwh, 2)
+            return round(self.__price_kwh / 100, 4)
         except AttributeError:
             return None
 
@@ -142,6 +153,25 @@ class PriceData(object):
             return "🟢"
         else:
             return "🤷"
+
+    def __repr__(self):
+        data = {}
+        if self.ts:
+            data["ts"] = self.ts
+        if self.period:
+            data["period"] = self.period.strftime(_AMBER_DATETIME_FORMAT)
+        if self.kwh:
+            data["kwh"] = self.kwh
+        if self.renewable:
+            data["renewable"] = self.renewable
+        if self.color:
+            data["color"] = self.color
+        if self.emoji:
+            data["emoji"] = self.emoji
+        return data
+
+    def __str__(self):
+        return str(self.__repr__())
 
 
 class CurrentPrice(PriceData):

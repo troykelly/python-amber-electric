@@ -13,7 +13,7 @@ class Usage(object):
         self.__protocol = protocol
 
     async def update(self):
-        data = {"headers": {"normalizedNames": {}, "lazyUpdate": null, "headers": {}}}
+        data = {"headers": {"normalizedNames": {}, "lazyUpdate": None, "headers": {}}}
         response = await self.__protocol.api_post(
             path="UsageHub/GetUsageForHub", json=data
         )

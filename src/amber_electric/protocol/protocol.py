@@ -55,6 +55,23 @@ class Protocol(object):
         self.__session = None
         self.__auth = None
 
+    async def raw(self, method="GET", url=None, params=None, json=None, headers=None):
+        """Make request with requests
+
+        Attributes:
+            method (str): The request verb/method to use
+            url (str): The URL to interact with
+            params (dict): Paramaters to pass
+            json (object): Data to pass in the request body
+            headers (dict): Headers to be transmitted
+
+        Returns:
+            data (object): The data
+        """
+        return await self.__loop.run_in_executor(
+            None, self.__request, method, url, params, json, headers
+        )
+
     async def api_get(self, path=None, params=None, headers=None):
         """Make a GET request to the Amber Electric API
 
@@ -158,6 +175,18 @@ class Protocol(object):
         giveup=fatal_code,
     )
     def __request(self, method="GET", url=None, params=None, json=None, headers=None):
+        """Make request with requests
+
+        Attributes:
+            method (str): The request verb/method to use
+            url (str): The URL to interact with
+            params (dict): Paramaters to pass
+            json (object): Data to pass in the request body
+            headers (dict): Headers to be transmitted
+
+        Returns:
+            data (object): The data
+        """
 
         _LOGGER.debug(
             {
@@ -216,3 +245,10 @@ class Protocol(object):
             )
 
         return data
+
+    @property
+    def loop(self):
+        try:
+            return self.__loop
+        except AttributeError:
+            return None

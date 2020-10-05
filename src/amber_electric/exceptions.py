@@ -13,6 +13,29 @@ class Error(Exception):
     pass
 
 
+class NoLocationError(Error):
+    """Returned when requesting market update without a postcode"""
+
+    def __init__(self, message=None, address=None):
+        super().__init__()
+        self.__message = message
+        self.__address = address
+
+    @property
+    def message(self):
+        try:
+            return self.__message
+        except AttributeError:
+            return None
+
+    @property
+    def address(self):
+        try:
+            return self.__address
+        except AttributeError:
+            return None
+
+
 class AmberElectricAPIError(Error):
     """Returned when experiencing a general API error"""
 
