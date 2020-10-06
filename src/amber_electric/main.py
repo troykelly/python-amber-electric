@@ -98,6 +98,8 @@ class AmberElectric(object):
             if self.__poll_complete_push:
                 data = dict()
                 data["ts"] = datetime.now().timestamp()
+                data["postcode"] = self.__market.postcode
+                data["address"] = self.__market.address
                 data["polled"] = True
                 if self.__price:
                     data["price"] = self.__price
@@ -161,5 +163,19 @@ class AmberElectric(object):
     def market(self):
         try:
             return self.__market
+        except AttributeError:
+            return None
+
+    @property
+    def postcode(self):
+        try:
+            return self.__market.postcode
+        except AttributeError:
+            return None
+
+    @property
+    def address(self):
+        try:
+            return self.__market.address
         except AttributeError:
             return None

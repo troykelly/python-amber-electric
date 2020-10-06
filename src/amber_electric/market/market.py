@@ -20,27 +20,29 @@ class Market(object):
     def __init__(self, protocol=None, postcode=None, latitude=None, longitude=None):
         super().__init__()
         self.__protocol = protocol
-        self.__postcode = postcode
+        self.__postcode = int(postcode) if postcode else None
+        self.__address = None
         if latitude and longitude:
             self.__point = Point(latitude, longitude)
         else:
             self.__point = None
 
     async def update(self):
-        if self.__point:
-            address = await reverse_geocode(self.__point, self.__protocol.loop)
-            if address.postcode and address.country == "Australia":
-                postcode = address.postcode
-            else:
-                raise NoLocationError(message="Address unsuitable", address=address)
-        else:
-            address = None
-            postcode = self.__postcode
+        if self.__point and not self.__address:
+            self.__address = await reverse_geocode(self.__point, self.__protocol.loop)
+            if not (
+                self.__address.postcode
+                and self.__address.country.upper() == "AUSTRALIA"
+            ):
+                raise NoLocationError(
+                    message="Address unsuitable - must be in Australia and have a postcode.",
+                    address=self.__address,
+                )
 
-        if not postcode:
+        if not self.postcode:
             raise NoLocationError(message="No postcode availabile")
 
-        data = {"postcode": postcode}
+        data = {"postcode": f"{self.postcode:04}"}
         response = await self.__protocol.raw(
             method="POST",
             url="https://api.amberelectric.com.au/prices/listprices",
@@ -70,6 +72,24 @@ class Market(object):
                 self.__e1tou = E2(response["data"]["staticPrices"]["E1TOU"])
 
         return self
+
+    @property
+    def postcode(self):
+        if (
+            self.__address
+            and self.__address.postcode
+            and self.__address.country.upper() == "AUSTRALIA"
+        ):
+            return int(self.__address.postcode)
+        else:
+            return self.__postcode
+
+    @property
+    def address(self):
+        try:
+            return self.__address
+        except AttributeError:
+            return None
 
     @property
     def current_period(self):
@@ -146,6 +166,7 @@ class Market(object):
 
     def __repr__(self):
         data = dict()
+        data["postcode"] = self.postcode
         data["nem_time"] = self.__nemtime.isoformat()
         data["nem_ts"] = self.__nemtime.timestamp()
         data["current_period"] = self.current_period.isoformat()
