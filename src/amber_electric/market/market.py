@@ -1,7 +1,7 @@
 """Amber Electric Market Price API"""
 
 
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 import logging
 
@@ -11,6 +11,9 @@ from ..geocode import reverse_geocode, Point
 _LOGGER = logging.getLogger(__name__)
 _AMBER_DATETIME_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 _NEM_DATETIME_FORMAT = "%Y-%m-%dT%H:%M:%S%z"
+_NEM_TZ_OFFSET = "+1000"
+
+_TAX_GST_OFFSET = 0.1
 
 
 class Market(object):
@@ -48,7 +51,8 @@ class Market(object):
         self.__variable = VariablePeriodData(response["data"])
         if "currentNEMtime" in response["data"]:
             self.__nemtime = datetime.strptime(
-                response["data"]["currentNEMtime"] + "+1000", _NEM_DATETIME_FORMAT
+                response["data"]["currentNEMtime"] + _NEM_TZ_OFFSET,
+                _NEM_DATETIME_FORMAT,
             )
         self.__network_provider = (
             response["data"]["networkProvider"]
@@ -66,6 +70,12 @@ class Market(object):
                 self.__e1tou = E2(response["data"]["staticPrices"]["E1TOU"])
 
         return self
+
+    @property
+    def current_period(self):
+        now = datetime.now()
+        delta = timedelta(minutes=30)
+        return now + (datetime.min - now) % delta
 
     @property
     def variable(self):
@@ -102,10 +112,48 @@ class Market(object):
         except AttributeError:
             return None
 
+    @property
+    def usage_price(self):
+        if not (self.e1 and self.variable):
+            return None
+        current_period_ts = self.current_period.timestamp()
+        variable_data = self.__variable.get_period(current_period_ts)
+        if not variable_data:
+            return None
+        fixed_kwh_price = self.e1.total_fixed_kwh_price
+        loss_factor = self.e1.loss_factor
+        wholesale_kwh_price = variable_data.wholesale_kwh_price
+        if not (fixed_kwh_price and loss_factor and wholesale_kwh_price):
+            return None
+        price = fixed_kwh_price + (loss_factor * wholesale_kwh_price)
+        return price
+
+    @property
+    def export_price(self):
+        if not (self.e1 and self.variable):
+            return None
+        current_period_ts = self.current_period.timestamp()
+        variable_data = self.__variable.get_period(current_period_ts)
+        if not variable_data:
+            return None
+        fixed_kwh_price = self.b1.total_fixed_kwh_price
+        loss_factor = self.b1.loss_factor
+        wholesale_kwh_price = variable_data.wholesale_kwh_price
+        if not (fixed_kwh_price and loss_factor and wholesale_kwh_price):
+            return None
+        price = fixed_kwh_price + (loss_factor * wholesale_kwh_price)
+        return price
+
     def __repr__(self):
         data = dict()
         data["nem_time"] = self.__nemtime.isoformat()
         data["nem_ts"] = self.__nemtime.timestamp()
+        data["current_period"] = self.current_period.isoformat()
+        data["current_period_ts"] = self.current_period.timestamp()
+        if self.usage_price:
+            data["usage_price"] = self.usage_price
+        if self.export_price:
+            data["export_price"] = self.export_price
         data["network_provider"] = self.__network_provider
         data["variable"] = dict()
         data["static"] = dict()
@@ -136,6 +184,11 @@ class VariablePeriodData(object):
                 if variable_period.ts:
                     self.__periods[variable_period.ts] = variable_period
 
+    def get_period(self, period_ts):
+        if period_ts in self.__periods:
+            return self.__periods[period_ts]
+        return None
+
     @property
     def periods(self):
         try:
@@ -158,56 +211,84 @@ class VariablePeriodData(object):
         return data
 
     def __str__(self):
-        return json.dumps(self.__repr__())
+        return json.dumps(self.__repr__(), sort_keys=True, indent=4)
 
 
 class VariablePeriod(object):
     def __init__(self, price_payload):
         super().__init__()
+        if not "period" in price_payload:
+            _LOGGER.error(price_payload)
+            raise AttributeError("Period must be supplied and valid")
+
+        self.__period = datetime.strptime(
+            price_payload["period"] + _NEM_TZ_OFFSET, _NEM_DATETIME_FORMAT
+        )
+
         self.__period_type = (
             price_payload["periodType"] if "periodType" in price_payload else None
         )
         self.__semi_scheduled_generation = (
-            price_payload["semiScheduledGeneration"]
+            float(price_payload["semiScheduledGeneration"])
             if "semiScheduledGeneration" in price_payload
             else None
         )
         self.__operational_demand = (
-            price_payload["operationalDemand"]
+            float(price_payload["operationalDemand"])
             if "operationalDemand" in price_payload
             else None
         )
         self.__rooftop_solar = (
-            price_payload["rooftopSolar"] if "rooftopSolar" in price_payload else None
+            float(price_payload["rooftopSolar"])
+            if "rooftopSolar" in price_payload
+            else None
         )
         self.__created_at = (
             datetime.strptime(
-                price_payload["createdAt"] + "+1000", _NEM_DATETIME_FORMAT
+                price_payload["createdAt"] + _NEM_TZ_OFFSET, _NEM_DATETIME_FORMAT
             )
             if "createdAt" in price_payload
             else None
         )
         self.__wholesale_kwh_price = (
-            price_payload["wholesaleKWHPrice"]
+            float(price_payload["wholesaleKWHPrice"])
             if "wholesaleKWHPrice" in price_payload
             else None
         )
         self.__region = price_payload["region"] if "region" in price_payload else None
-        self.__period = (
-            datetime.strptime(price_payload["period"] + "+1000", _NEM_DATETIME_FORMAT)
-            if "period" in price_payload
-            else None
-        )
         self.__renewables_percentage = (
-            price_payload["renewablesPercentage"]
+            float(price_payload["renewablesPercentage"])
             if "renewablesPercentage" in price_payload
             else None
         )
-        self.__period_source = (
-            price_payload["periodSource"] if "periodSource" in price_payload else None
-        )
+
+        period_source_data = price_payload["periodSource"].upper()
+        delta = None
+        if period_source_data == "5MIN":
+            delta = timedelta(minutes=5)
+        elif period_source_data == "10MIN":
+            delta = timedelta(minutes=10)
+        elif period_source_data == "15MIN":
+            delta = timedelta(minutes=15)
+        elif period_source_data == "30MIN":
+            delta = timedelta(minutes=30)
+        elif period_source_data == "45MIN":
+            delta = timedelta(minutes=45)
+        elif period_source_data == "60MIN":
+            delta = timedelta(minutes=60)
+        elif period_source_data == "1DAY":
+            delta = timedelta(days=1)
+        elif period_source_data == "1WEEK":
+            delta = timedelta(weeks=1)
+        else:
+            _LOGGER.warning(
+                "Unknown periodSource: %s => %s", period_source_data, price_payload
+            )
+        if delta:
+            self.__period_source = delta
+
         self.__percentile_rank = (
-            price_payload["percentileRank"]
+            float(price_payload["percentileRank"])
             if "percentileRank" in price_payload
             else None
         )
@@ -222,42 +303,42 @@ class VariablePeriod(object):
     @property
     def period_type(self):
         try:
-            return self.__periodType
+            return self.__period_type
         except AttributeError:
             return None
 
     @property
     def semi_scheduled_generation(self):
         try:
-            return self.__semiScheduledGeneration
+            return self.__semi_scheduled_generation
         except AttributeError:
             return None
 
     @property
     def operational_demand(self):
         try:
-            return self.__operationalDemand
+            return self.__operational_demand
         except AttributeError:
             return None
 
     @property
     def rooftop_solar(self):
         try:
-            return self.__rooftopSolar
+            return self.__rooftop_solar
         except AttributeError:
             return None
 
     @property
     def created_at(self):
         try:
-            return self.__createdAt
+            return self.__created_at
         except AttributeError:
             return None
 
     @property
     def wholesale_kwh_price(self):
         try:
-            return self.__wholesaleKWHPrice
+            return self.__wholesale_kwh_price / 100 / (1 + _TAX_GST_OFFSET)
         except AttributeError:
             return None
 
@@ -278,21 +359,21 @@ class VariablePeriod(object):
     @property
     def renewables_percentage(self):
         try:
-            return self.__renewablesPercentage
+            return self.__renewables_percentage
         except AttributeError:
             return None
 
     @property
     def period_source(self):
         try:
-            return self.__periodSource
+            return self.__period_source
         except AttributeError:
             return None
 
     @property
     def percentile_rank(self):
         try:
-            return self.__percentileRank
+            return self.__percentile_rank
         except AttributeError:
             return None
 
@@ -303,17 +384,19 @@ class VariablePeriod(object):
         data["semi_scheduled_generation"] = self.semi_scheduled_generation
         data["operational_demand"] = self.operational_demand
         data["rooftop_solar"] = self.rooftop_solar
-        data["created_at"] = self.created_at
+        if self.created_at:
+            data["created_at"] = self.created_at.isoformat()
         data["wholesale_kwh_price"] = self.wholesale_kwh_price
         data["region"] = self.region
         data["period"] = self.period.isoformat()
         data["renewables_percentage"] = self.renewables_percentage
-        data["period_source"] = self.period_source
+        if self.period_source:
+            data["period_source"] = self.period_source.total_seconds()
         data["percentile_rank"] = self.percentile_rank
         return data
 
     def __str__(self):
-        return str(self.__repr__())
+        return json.dumps(self.__repr__(), sort_keys=True, indent=4)
 
 
 class PriceData(object):
@@ -391,63 +474,65 @@ class PriceData(object):
     @property
     def network_daily_price(self):
         try:
-            return self.__network_daily_price
+            return self.__network_daily_price / 100 / (1 + _TAX_GST_OFFSET)
         except AttributeError:
             return None
 
     @property
     def basic_meter_daily_price(self):
         try:
-            return self.__basic_meter_daily_price
+            return self.__basic_meter_daily_price / 100 / (1 + _TAX_GST_OFFSET)
         except AttributeError:
             return None
 
     @property
     def additional_smart_meter_daily_price(self):
         try:
-            return self.__additional_smart_meter_daily_price
+            return (
+                self.__additional_smart_meter_daily_price / 100 / (1 + _TAX_GST_OFFSET)
+            )
         except AttributeError:
             return None
 
     @property
     def amber_daily_price(self):
         try:
-            return self.__amber_daily_price
+            return self.__amber_daily_price / 100 / (1 + _TAX_GST_OFFSET)
         except AttributeError:
             return None
 
     @property
     def total_daily_price(self):
         try:
-            return self.__total_daily_price
+            return self.__total_daily_price / 100 / (1 + _TAX_GST_OFFSET)
         except AttributeError:
             return None
 
     @property
     def network_kwh_price(self):
         try:
-            return self.__network_kwh_price
+            return self.__network_kwh_price / 100 / (1 + _TAX_GST_OFFSET)
         except AttributeError:
             return None
 
     @property
     def market_kwh_price(self):
         try:
-            return self.__market_kwh_price
+            return self.__market_kwh_price / 100 / (1 + _TAX_GST_OFFSET)
         except AttributeError:
             return None
 
     @property
     def green_kwh_price(self):
         try:
-            return self.__green_kwh_price
+            return self.__green_kwh_price / 100 / (1 + _TAX_GST_OFFSET)
         except AttributeError:
             return None
 
     @property
     def carbon_neutral_kwh_price(self):
         try:
-            return self.__carbon_neutral_kwh_price
+            return self.__carbon_neutral_kwh_price / 100 / (1 + _TAX_GST_OFFSET)
         except AttributeError:
             return None
 
@@ -461,35 +546,41 @@ class PriceData(object):
     @property
     def offset_kwh_price(self):
         try:
-            return self.__offset_kwh_price
+            return self.__offset_kwh_price / 100 / (1 + _TAX_GST_OFFSET)
         except AttributeError:
             return None
 
     @property
     def total_fixed_kwh_price(self):
         try:
-            return self.__total_fixed_kwh_price
+            return self.__total_fixed_kwh_price / 100 / (1 + _TAX_GST_OFFSET)
         except AttributeError:
             return None
 
     @property
     def total_black_peak_fixed_kwh_price(self):
         try:
-            return self.__total_black_peak_fixed_kwh_price
+            return self.__total_black_peak_fixed_kwh_price / 100 / (1 + _TAX_GST_OFFSET)
         except AttributeError:
             return None
 
     @property
     def total_black_shoulder_fixed_kwh_price(self):
         try:
-            return self.__total_black_shoulder_fixed_kwh_price
+            return (
+                self.__total_black_shoulder_fixed_kwh_price
+                / 100
+                / (1 + _TAX_GST_OFFSET)
+            )
         except AttributeError:
             return None
 
     @property
     def total_black_offpeak_fixed_kwh_price(self):
         try:
-            return self.__total_black_offpeak_fixed_kwh_price
+            return (
+                self.__total_black_offpeak_fixed_kwh_price / 100 / (1 + _TAX_GST_OFFSET)
+            )
         except AttributeError:
             return None
 
@@ -520,7 +611,7 @@ class PriceData(object):
         return data
 
     def __str__(self):
-        return str(self.__repr__())
+        return json.dumps(self.__repr__(), sort_keys=True, indent=4)
 
 
 class E1(PriceData):

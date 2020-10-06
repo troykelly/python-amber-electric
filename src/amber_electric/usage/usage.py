@@ -1,5 +1,6 @@
 """Amber Electric Usage"""
 
+import json
 import logging
 from datetime import datetime
 
@@ -19,5 +20,8 @@ class Usage(object):
         )
         if not (response and "data" in response):
             return None
-        _LOGGER.debug(response["data"])
+        _LOGGER.debug(
+            "UsageHub/GetUsageForHub: \n%s",
+            json.dumps(response["data"], sort_keys=True, indent=4),
+        )
         return self

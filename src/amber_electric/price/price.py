@@ -1,10 +1,13 @@
 """Amber Electric Pricing API"""
 
+import json
 import logging
 from datetime import datetime
 
 _LOGGER = logging.getLogger(__name__)
 _AMBER_DATETIME_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
+
+_TAX_GST_OFFSET = 0.1
 
 
 class Price(object):
@@ -35,6 +38,15 @@ class Price(object):
         except AttributeError:
             return None
 
+    def __repr__(self):
+        data = dict()
+        data["current"] = self.__current.__repr__()
+        data["forecast"] = self.__forecast.__repr__()
+        return data
+
+    def __str__(self):
+        return json.dumps(self.__repr__(), sort_keys=True, indent=4)
+
 
 class ForecastPrices(object):
     def __init__(self, price_payload):
@@ -62,15 +74,15 @@ class ForecastPrices(object):
         return data
 
     def __repr__(self):
-        return self.list
-
-    def __str__(self):
         if not self.list:
             return None
-        data = ""
-        for price in self.list:
-            data += str(price) + "\n"
+        data = list()
+        for i in sorted(self.__prices.keys()):
+            data.append(self.__prices[i].__repr__())
         return data
+
+    def __str__(self):
+        return json.dumps(self.__repr__(), sort_keys=True, indent=4)
 
 
 class PriceData(object):
@@ -125,14 +137,14 @@ class PriceData(object):
     @property
     def kwh(self):
         try:
-            return round(self.__price_kwh / 100, 4)
+            return round(self.__price_kwh / 100 / (1 + _TAX_GST_OFFSET), 4)
         except AttributeError:
             return None
 
     @property
     def renewable(self):
         try:
-            return round(self.__renewable / 100, 2)
+            return round(self.__renewable / 100 / (1 + _TAX_GST_OFFSET), 2)
         except AttributeError:
             return None
 
@@ -159,7 +171,7 @@ class PriceData(object):
         if self.ts:
             data["ts"] = self.ts
         if self.period:
-            data["period"] = self.period.strftime(_AMBER_DATETIME_FORMAT)
+            data["period"] = self.period.isoformat()
         if self.kwh:
             data["kwh"] = self.kwh
         if self.renewable:
@@ -171,7 +183,7 @@ class PriceData(object):
         return data
 
     def __str__(self):
-        return str(self.__repr__())
+        return json.dumps(self.__repr__(), sort_keys=True, indent=4)
 
 
 class CurrentPrice(PriceData):
