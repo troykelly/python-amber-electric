@@ -4,6 +4,7 @@
 from datetime import datetime, timedelta
 import json
 import logging
+import re
 
 from ..exceptions import NoLocationError
 from ..geocode import reverse_geocode, Point
@@ -14,6 +15,10 @@ _NEM_DATETIME_FORMAT = "%Y-%m-%dT%H:%M:%S%z"
 _NEM_TZ_OFFSET = "+1000"
 
 _TAX_GST_OFFSET = 0.1
+
+_RE_AMBER_PERIOD_TYPE = re.compile(
+    r"(?:(?P<seconds>^\d+)SEC$)|(?:(?P<minutes>^\d+)MIN$)|(?:(?P<hours>^\d+)HOUR$)|(?:(?P<days>^\d+)DAY$)"
+)
 
 
 class Market(object):
@@ -98,6 +103,11 @@ class Market(object):
         return now + (datetime.min - now) % delta
 
     @property
+    def current_variable(self):
+        current_period_ts = self.current_period.timestamp()
+        return self.__variable.get_period(current_period_ts)
+
+    @property
     def variable(self):
         try:
             return self.__variable
@@ -136,8 +146,7 @@ class Market(object):
     def usage_price(self):
         if not (self.e1 and self.variable):
             return None
-        current_period_ts = self.current_period.timestamp()
-        variable_data = self.__variable.get_period(current_period_ts)
+        variable_data = self.current_variable
         if not variable_data:
             return None
         fixed_kwh_price = self.e1.total_fixed_kwh_price
@@ -152,8 +161,7 @@ class Market(object):
     def export_price(self):
         if not (self.e1 and self.variable):
             return None
-        current_period_ts = self.current_period.timestamp()
-        variable_data = self.__variable.get_period(current_period_ts)
+        variable_data = self.current_variable
         if not variable_data:
             return None
         fixed_kwh_price = self.b1.total_fixed_kwh_price
@@ -248,8 +256,8 @@ class VariablePeriodData(object):
     def __repr__(self):
         data = dict()
         data["periods"] = list()
-        for period in self.periods:
-            data["periods"].append(period.__repr__())
+        for i in sorted(self.__periods.keys()):
+            data["periods"].append(self.__periods[i])
         return data
 
     def __str__(self):
@@ -259,11 +267,31 @@ class VariablePeriodData(object):
 class VariablePeriod(object):
     def __init__(self, price_payload):
         super().__init__()
+
         if not "period" in price_payload:
             _LOGGER.error(price_payload)
             raise AttributeError("Period must be supplied and valid")
 
-        self.__period = datetime.strptime(
+        period_source_data = price_payload["periodSource"].upper()
+        period_source = _RE_AMBER_PERIOD_TYPE.search(period_source_data)
+        if period_source:
+            period_source_dict = period_source.groupdict()
+            self.__period_delta = timedelta(
+                days=int(period_source_dict["days"])
+                if period_source_dict["days"]
+                else 0,
+                hours=int(period_source_dict["hours"])
+                if period_source_dict["hours"]
+                else 0,
+                minutes=int(period_source_dict["minutes"])
+                if period_source_dict["minutes"]
+                else 0,
+                seconds=int(period_source_dict["seconds"])
+                if period_source_dict["seconds"]
+                else 0,
+            )
+
+        self.__period_end = datetime.strptime(
             price_payload["period"] + _NEM_TZ_OFFSET, _NEM_DATETIME_FORMAT
         )
 
@@ -304,45 +332,31 @@ class VariablePeriod(object):
             else None
         )
 
-        period_source_data = price_payload["periodSource"].upper()
-        if period_source_data != "30MIN":
-            _LOGGER.debug(
-                "Strange period source (%s): %s", period_source_data, price_payload
-            )
-        delta = None
-        if period_source_data == "5MIN":
-            delta = timedelta(minutes=5)
-        elif period_source_data == "10MIN":
-            delta = timedelta(minutes=10)
-        elif period_source_data == "15MIN":
-            delta = timedelta(minutes=15)
-        elif period_source_data == "30MIN":
-            delta = timedelta(minutes=30)
-        elif period_source_data == "45MIN":
-            delta = timedelta(minutes=45)
-        elif period_source_data == "60MIN":
-            delta = timedelta(minutes=60)
-        elif period_source_data == "1DAY":
-            delta = timedelta(days=1)
-        elif period_source_data == "1WEEK":
-            delta = timedelta(weeks=1)
-        else:
-            _LOGGER.warning(
-                "Unknown periodSource: %s => %s", period_source_data, price_payload
-            )
-        if delta:
-            self.__period_source = delta
-
         self.__percentile_rank = (
             float(price_payload["percentileRank"])
             if "percentileRank" in price_payload
             else None
         )
 
+    # TODO: Deprecate this
     @property
     def ts(self):
         try:
-            return self.__period.timestamp()
+            return self.period_end.timestamp()
+        except AttributeError:
+            return None
+
+    @property
+    def ts_end(self):
+        try:
+            return self.period_end.timestamp()
+        except AttributeError:
+            return None
+
+    @property
+    def ts_start(self):
+        try:
+            return self.period_start.timestamp()
         except AttributeError:
             return None
 
@@ -396,11 +410,24 @@ class VariablePeriod(object):
             return None
 
     @property
-    def period(self):
+    def period_end(self):
         try:
-            return self.__period
+            return self.__period_end
         except AttributeError:
             return None
+
+    @property
+    def period_start(self):
+        try:
+            period_end = self.__period_end
+            period_delta = self.__period_delta
+        except AttributeError:
+            return None
+
+        if not (period_end and period_delta):
+            return None
+
+        return period_end - period_delta + timedelta(milliseconds=1)
 
     @property
     def renewables_percentage(self):
@@ -409,10 +436,18 @@ class VariablePeriod(object):
         except AttributeError:
             return None
 
+    # TODO: Deprecate this
     @property
     def period_source(self):
         try:
-            return self.__period_source
+            return self.__period_delta
+        except AttributeError:
+            return None
+
+    @property
+    def period_delta(self):
+        try:
+            return self.__period_delta
         except AttributeError:
             return None
 
@@ -425,7 +460,10 @@ class VariablePeriod(object):
 
     def __repr__(self):
         data = {}
-        data["ts"] = self.ts
+        data["ts_end"] = self.ts_end
+        data["ts_start"] = self.ts_start
+        data["period_start"] = self.period_start.isoformat()
+        data["period_end"] = self.period_end.isoformat()
         data["period_type"] = self.period_type
         data["semi_scheduled_generation"] = self.semi_scheduled_generation
         data["operational_demand"] = self.operational_demand
@@ -434,7 +472,6 @@ class VariablePeriod(object):
             data["created_at"] = self.created_at.isoformat()
         data["wholesale_kwh_price"] = self.wholesale_kwh_price
         data["region"] = self.region
-        data["period"] = self.period.isoformat()
         data["renewables_percentage"] = self.renewables_percentage
         if self.period_source:
             data["period_source"] = self.period_source.total_seconds()
