@@ -13,6 +13,7 @@ _LOGGER = logging.getLogger(__name__)
 _AMBER_DATETIME_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 _NEM_DATETIME_FORMAT = "%Y-%m-%dT%H:%M:%S%z"
 _NEM_TZ_OFFSET = "+1000"
+_NEM_SETTLEMENT_PERIOD = timedelta(minutes=30)
 
 _TAX_GST_OFFSET = 0.1
 
@@ -420,7 +421,7 @@ class VariablePeriod(object):
     def period_start(self):
         try:
             period_end = self.__period_end
-            period_delta = self.__period_delta
+            period_delta = _NEM_SETTLEMENT_PERIOD
         except AttributeError:
             return None
 
@@ -473,8 +474,8 @@ class VariablePeriod(object):
         data["wholesale_kwh_price"] = self.wholesale_kwh_price
         data["region"] = self.region
         data["renewables_percentage"] = self.renewables_percentage
-        if self.period_source:
-            data["period_source"] = self.period_source.total_seconds()
+        if self.period_delta:
+            data["period_delta"] = self.period_delta.total_seconds()
         data["percentile_rank"] = self.percentile_rank
         return data
 
