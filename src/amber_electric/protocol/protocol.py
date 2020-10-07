@@ -202,9 +202,14 @@ class Protocol(object):
         if not headers:
             headers = {}
 
-        if hasattr(self, "__auth") and self.__auth is not None:
-            id_token = getattr(self.__auth, "id_token", None)
-            refresh_token = getattr(self.__auth, "refresh_token", None)
+        try:
+            auth = self.__auth
+        except AttributeError:
+            auth = None
+
+        if auth:
+            id_token = getattr(auth, "id_token", None)
+            refresh_token = getattr(auth, "refresh_token", None)
             if id_token:
                 headers["Authorization"] = id_token
             if refresh_token:
