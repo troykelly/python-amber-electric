@@ -202,12 +202,13 @@ class Protocol(object):
         if not headers:
             headers = {}
 
-        id_token = getattr(self.__auth, "id_token", None)
-        refresh_token = getattr(self.__auth, "refresh_token", None)
-        if id_token:
-            headers["Authorization"] = id_token
-        if refresh_token:
-            headers["RefreshToken"] = refresh_token
+        if hasattr(self, "__auth") and self.__auth is not None:
+            id_token = getattr(self.__auth, "id_token", None)
+            refresh_token = getattr(self.__auth, "refresh_token", None)
+            if id_token:
+                headers["Authorization"] = id_token
+            if refresh_token:
+                headers["RefreshToken"] = refresh_token
 
         try:
             response = session.request(

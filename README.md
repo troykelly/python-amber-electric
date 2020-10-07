@@ -21,42 +21,66 @@ This library uses `logging` just set the log level and format you need.
 
 ## Example
 
+The examples below may look a little complex - because this library relies on functions like `.auth()` and `.update()` being `await`ed.
+
 ### See current market pricing
 
 ```python
+import asyncio
 from amber_electric import AmberElectric
 
 api = AmberElectric(
         latitude=-37.828690,
         longitude=144.997460,
     )
-print(api.market)
+
+async def display_market_pricing():
+    await api.market.update()
+    print(api.market)
+
+asyncio.get_event_loop().run_until_complete(display_market_pricing())
 ```
 
 ### Get your current pricing
 
 ```python
+import asyncio
+from amber_electric import AmberElectric
+
 api = AmberElectric(
         latitude=-37.828690,
         longitude=144.997460,
 		username="family@example.com",
 		password="secret"
     )
-await api.auth()
-print(api.price)
+
+async def get_account_pricing():
+    await api.auth()
+    await api.price.update()
+    print(api.price)
+
+asyncio.get_event_loop().run_until_complete(get_account_pricing())
 ```
 
 ### Get your current usage (WIP)
 
 ```python
+import asyncio
+from amber_electric import AmberElectric
+
 api = AmberElectric(
         latitude=-37.828690,
         longitude=144.997460,
 		username="family@example.com",
 		password="secret"
     )
-await api.auth()
-print(api.usage)
+
+async def get_account_pricing():
+    await api.auth()
+    await api.usage.update()
+    print(api.usage)
+
+asyncio.get_event_loop().run_until_complete(get_account_pricing())
 ```
 
 ## Support
