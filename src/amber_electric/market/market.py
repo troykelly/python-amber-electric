@@ -164,6 +164,13 @@ class Market(object):
         price = fixed_kwh_price + (loss_factor * wholesale_kwh_price)
         return price
 
+    @property
+    def network_provider(self):
+        try:
+            return self.__network_provider
+        except AttributeError:
+            return None
+
     def __repr__(self):
         data = dict()
         data["postcode"] = self.postcode

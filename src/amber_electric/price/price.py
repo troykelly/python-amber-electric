@@ -40,8 +40,10 @@ class Price(object):
 
     def __repr__(self):
         data = dict()
-        data["current"] = self.__current.__repr__()
-        data["forecast"] = self.__forecast.__repr__()
+        if self.current:
+            data["current"] = self.__current.__repr__()
+        if self.forecast:
+            data["forecast"] = self.__forecast.__repr__()
         return data
 
     def __str__(self):
