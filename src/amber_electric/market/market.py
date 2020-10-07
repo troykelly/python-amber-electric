@@ -171,6 +171,20 @@ class Market(object):
         except AttributeError:
             return None
 
+    @property
+    def nem_time(self):
+        try:
+            return self.__nemtime
+        except AttributeError:
+            return None
+
+    @property
+    def nem_ts(self):
+        try:
+            return self.__nemtime.timestamp()
+        except AttributeError:
+            return None
+
     def __repr__(self):
         data = dict()
         data["postcode"] = self.postcode
@@ -291,6 +305,10 @@ class VariablePeriod(object):
         )
 
         period_source_data = price_payload["periodSource"].upper()
+        if period_source_data != "30MIN":
+            _LOGGER.debug(
+                "Strange period source (%s): %s", period_source_data, price_payload
+            )
         delta = None
         if period_source_data == "5MIN":
             delta = timedelta(minutes=5)
