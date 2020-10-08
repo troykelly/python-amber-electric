@@ -56,7 +56,7 @@ class Market(object):
         )
         if not (response and "data" in response):
             return None
-        self.__variable = VariablePeriodData(response["data"])
+        self.__variable = VariablePeriodData(response["data"], self.current_period)
         if "currentNEMtime" in response["data"]:
             self.__nemtime = datetime.strptime(
                 response["data"]["currentNEMtime"] + _NEM_TZ_OFFSET,
@@ -228,7 +228,7 @@ class Market(object):
 
 
 class VariablePeriodData(object):
-    def __init__(self, prices_payload):
+    def __init__(self, prices_payload, current_period):
         super().__init__()
         self.__periods = dict()
         if "variablePricesAndRenewables" in prices_payload:
@@ -238,6 +238,8 @@ class VariablePeriodData(object):
                     self.__latest = variable_period
                 elif variable_period.ts:
                     self.__periods[variable_period.ts] = variable_period
+            if not self.__latest:
+                self.__latest = get_period(current_period)
 
     def get_period(self, period_ts):
         if period_ts in self.__periods:
