@@ -240,7 +240,7 @@ class VariablePeriodData(object):
                 elif variable_period.ts:
                     self.__periods[variable_period.ts] = variable_period
             if not self.__latest:
-                self.__latest = self.get_period(current_period)
+                self.__latest = self.get_period(current_period.timestamp())
 
     def get_period(self, period_ts):
         if period_ts in self.__periods:
