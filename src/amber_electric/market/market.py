@@ -104,9 +104,11 @@ class Market(object):
         return now + (datetime.min - now) % delta
 
     @property
-    def current_variable(self):
-        current_period_ts = self.current_period.timestamp()
-        return self.__variable.get_period(current_period_ts)
+    def latest(self):
+        try:
+            return self.__variable.latest
+        except AttributeError:
+            return None
 
     @property
     def variable(self):
@@ -147,7 +149,7 @@ class Market(object):
     def usage_price(self):
         if not (self.e1 and self.variable):
             return None
-        variable_data = self.current_variable
+        variable_data = self.latest
         if not variable_data:
             return None
         fixed_kwh_price = self.e1.total_fixed_kwh_price
@@ -162,7 +164,7 @@ class Market(object):
     def export_price(self):
         if not (self.e1 and self.variable):
             return None
-        variable_data = self.current_variable
+        variable_data = self.latest
         if not variable_data:
             return None
         fixed_kwh_price = self.b1.total_fixed_kwh_price
@@ -232,13 +234,22 @@ class VariablePeriodData(object):
         if "variablePricesAndRenewables" in prices_payload:
             for variable_price_payload in prices_payload["variablePricesAndRenewables"]:
                 variable_period = VariablePeriod(variable_price_payload)
-                if variable_period.ts:
+                if variable_period.latest:
+                    self.__latest = variable_period
+                elif variable_period.ts:
                     self.__periods[variable_period.ts] = variable_period
 
     def get_period(self, period_ts):
         if period_ts in self.__periods:
             return self.__periods[period_ts]
         return None
+
+    @property
+    def latest(self):
+        try:
+            return self.__latest
+        except AttributeError:
+            return None
 
     @property
     def periods(self):
@@ -292,9 +303,16 @@ class VariablePeriod(object):
                 else 0,
             )
 
-        self.__period_end = datetime.strptime(
-            price_payload["period"] + _NEM_TZ_OFFSET, _NEM_DATETIME_FORMAT
-        )
+        if "latestPeriod" in price_payload:
+            self.__latest = True
+            self.__period_end = datetime.strptime(
+                price_payload["latestPeriod"] + _NEM_TZ_OFFSET, _NEM_DATETIME_FORMAT
+            )
+        else:
+            self.__latest = False
+            self.__period_end = datetime.strptime(
+                price_payload["period"] + _NEM_TZ_OFFSET, _NEM_DATETIME_FORMAT
+            )
 
         self.__period_type = (
             price_payload["periodType"] if "periodType" in price_payload else None
@@ -338,6 +356,13 @@ class VariablePeriod(object):
             if "percentileRank" in price_payload
             else None
         )
+
+    @property
+    def latest(self):
+        try:
+            return self.__latest
+        except AttributeError:
+            return None
 
     # TODO: Deprecate this
     @property
@@ -421,7 +446,9 @@ class VariablePeriod(object):
     def period_start(self):
         try:
             period_end = self.__period_end
-            period_delta = _NEM_SETTLEMENT_PERIOD
+            period_delta = (
+                self.__period_delta if self.__period_delta else _NEM_SETTLEMENT_PERIOD
+            )
         except AttributeError:
             return None
 

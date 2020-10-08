@@ -90,6 +90,8 @@ class ForecastPrices(object):
 class PriceData(object):
     def __init__(self, price_payload):
         super().__init__()
+        if not price_payload:
+            return None
         if "currentPriceKWH" in price_payload:
             self.__price_kwh = float(price_payload["currentPriceKWH"])
         elif "priceKWH" in price_payload:
