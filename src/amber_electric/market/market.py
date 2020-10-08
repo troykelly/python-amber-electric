@@ -231,6 +231,7 @@ class VariablePeriodData(object):
     def __init__(self, prices_payload, current_period):
         super().__init__()
         self.__periods = dict()
+        self.__latest = None
         if "variablePricesAndRenewables" in prices_payload:
             for variable_price_payload in prices_payload["variablePricesAndRenewables"]:
                 variable_period = VariablePeriod(variable_price_payload)
@@ -239,7 +240,7 @@ class VariablePeriodData(object):
                 elif variable_period.ts:
                     self.__periods[variable_period.ts] = variable_period
             if not self.__latest:
-                self.__latest = get_period(current_period)
+                self.__latest = self.get_period(current_period)
 
     def get_period(self, period_ts):
         if period_ts in self.__periods:
