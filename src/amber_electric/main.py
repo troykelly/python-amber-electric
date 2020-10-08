@@ -62,19 +62,28 @@ class AmberElectric(object):
 
         super().__init__()
         self.__loop = loop if loop else asyncio.get_event_loop()
+
+        self.__price = None
+        self.__usage = None
+        self.__market = None
+
         self.__poll_complete_push = list()
         self.__polling_active = False
+
         api_username = username if username else os.environ.get("AMBER_USERNAME", None)
         api_password = password if password else os.environ.get("AMBER_PASSWORD", None)
+
         self.__protocol = Protocol(
             username=api_username, password=api_password, loop=loop
         )
+
         self.__market = Market(
             protocol=self.__protocol,
             latitude=latitude,
             longitude=longitude,
             postcode=postcode,
         )
+
         if api_username and api_password:
             self.__price = Price(protocol=self.__protocol)
             self.__usage = Usage(protocol=self.__protocol)
@@ -120,7 +129,27 @@ class AmberElectric(object):
             await asyncio.sleep(interval_delta.total_seconds())
 
     def poll_for_updates(self, interval=60, event_receiver=None):
+        """Poll the Amber Electric API for changes.
+
+        Check every `interval` for updates at the Amber Electric API.
+        Sends updates to the `event_receiver` with the payloads of all
+        the connected endpoints.
+
+        Attributes:
+            interval (timedelta): Interval with which to poll the Amber Electric
+                api for changes.
+
+        Todo:
+            * Identify changes in data
+            * Pass only changed data to the event receiver
+
+        .. _Amber Electric API:
+        https://github.com/troykelly/python-amber-electric
+
+        """
+
         if not self.__protocol.loop:
+            _LOGGER.error("Unable to pull for changes without an event loop.")
             return None
 
         if not interval:
